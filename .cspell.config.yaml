@@ -1,0 +1,42 @@
+$schema: https://raw.githubusercontent.com/streetsidesoftware/cspell/main/cspell.schema.json
+version: "0.2"
+
+language:
+  - en
+  - es
+
+ignorePaths:
+  # default ignores
+  - ".idea/**"
+  - ".vscode/**"
+  - ".dictionaries/**"
+  - "LICENSE"
+  - ".cspell.config.yaml"
+
+dictionaryDefinitions:
+  - name: "project-words"
+    path: "./.dictionaries/project-words.txt"
+  - name: "spanish"
+    path: "./.dictionaries/spanish.txt"
+
+dictionaries:
+  - "project-words"
+  - "python"
+
+import:
+  - "@cspell/dict-es-es/cspell-ext.json"
+
+words: []
+ignoreWords: []
+useGitignore: true
+enabled: false
+
+overrides:
+  # Markdown (.md) → EN + ES
+  - filename: "**/*.md"
+    language:
+      - en
+      - es
+    dictionaries:
+      - project-words
+    allowCompoundWords: true
