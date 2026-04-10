@@ -85,7 +85,7 @@ Encriptacion para los datos: método simple AES (simétrico), usa una clave para
 1 archivo encargado del envio
 1 archivo encargado de la recepcion
 
-1 Menu de control
+1 Control de salida/entrada
 
 Envio de mensaje, Recepcion. Se muestra un panel de entrada y salida, por cada mensaje limpia y vuelve a imprirmir. Permite ver mensajes de error de recepcion y los mensajes enviados
 
