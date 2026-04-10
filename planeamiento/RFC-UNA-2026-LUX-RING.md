@@ -18,16 +18,16 @@ Autores: [nombres]
 
 - **Formato de trama:**
 
-| Campo         | Tamaño | Descripción                                      |
-|-------------- |--------|-------------------------------------------------|
-| Inicio        | 1 B    | Secuencia fija: 11111100                        |
-| MAC Origen    | 6 B    | Dirección MAC del emisor                        |
-| MAC Destino   | 6 B    | Dirección MAC del receptor                      |
-| Longitud      | 1 B    | Tamaño de los datos/payload (en bytes)          |
-| Control       | 1 B    | 4 bits: paquete actual, 4 bits: total paquetes  |
-| Datos         | 1-32 B | Payload cifrado                                 |
-| CheckSum      | 1 B    | Suma de los bits de datos, mod 256              |
-| Fin           | 1 B    | Secuencia fija: 00000000                        |
+| Campo       | Tamaño | Descripción                                    |
+| ----------- | ------ | ---------------------------------------------- |
+| Inicio      | 1 B    | Secuencia fija: 11111100                       |
+| MAC Origen  | 6 B    | Dirección MAC del emisor                       |
+| MAC Destino | 6 B    | Dirección MAC del receptor                     |
+| Longitud    | 1 B    | Tamaño de los datos/payload (en bytes)         |
+| Control     | 1 B    | 4 bits: paquete actual, 4 bits: total paquetes |
+| Datos       | 1-32 B | Payload cifrado                                |
+| CheckSum    | 1 B    | Suma de los bits de datos, mod 256             |
+| Fin         | 1 B    | Secuencia fija: 00000000                       |
 
 - **Dirección:** MAC de origen y destino (6 bytes cada una).
 - **Detección de errores:** CheckSum de 1 byte (suma de bits de datos, si excede 255 se descarta el acarreo y se usan los 8 bits inferiores).

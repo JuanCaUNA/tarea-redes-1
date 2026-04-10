@@ -6,7 +6,7 @@ const int pinLaser = 13;
 const int pinSensor = A0;
 
 // CONFIGURACIÓN DE PARÁMETROS
-const int umbral = 600;     // Ajusta según la potencia de tu láser
+const int umbral = 100;     // Ajusta según la potencia de tu láser
 const int delayBit = 50;    // Milisegundos por bit (Sincronización)
 const int startPulse = 100; // Pulso inicial para despertar al receptor
 
