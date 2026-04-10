@@ -43,7 +43,7 @@ Enlace de datos
     - Longitud (1B): indica cuanto mide los datos/playload
     - Control (1B): indica el paquete actual y la cantidad maxima (0000 | 0000)
       - primeros 4bits: paquete actual
-      - siguientes 4bits: cantidad de paquetes que se enviaran
+      - siguientes 4bits: cantidad de paquetes que se enviaran (total)
   - Datos / Payload: envia de 1 a 32 Bytes
   - Trailer
     - Deteccione errores (1B): CheckSum
