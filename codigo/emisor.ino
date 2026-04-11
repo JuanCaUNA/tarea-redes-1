@@ -50,10 +50,13 @@ uint8_t copiarPayloadYChecksum(const String &msg, int offset, int len, uint8_t *
 void imprimirMensajePorLineas(const String &msg, uint8_t totalPaq) {
   int inicio = 0;
   int largoTotal = msg.length();
+  int maxBytes = largoTotal;
+  int bytesEnviados = (int)totalPaq * MAX_PAYLOAD;
+  if (bytesEnviados < maxBytes) maxBytes = bytesEnviados; // imprimir solo lo enviado
 
-  while (inicio < largoTotal) {
+  while (inicio < maxBytes) {
     int fin = inicio + BYTES_POR_LINEA;
-    if (fin > largoTotal) fin = largoTotal;
+    if (fin > maxBytes) fin = maxBytes;
 
     uint8_t paqInicio = (uint8_t)(inicio / MAX_PAYLOAD) + 1;
     uint8_t paqFin = (uint8_t)((fin + MAX_PAYLOAD - 1) / MAX_PAYLOAD);
@@ -112,9 +115,16 @@ void enviarMensajeConFragmentacion(const String &msg) {
 }
 
 void enviarPaquete(const String &msg, int offset, int len, uint8_t paqNum, uint8_t totalPaq) {
+  if (len > MAX_PAYLOAD) len = MAX_PAYLOAD;
+  int expectedLen = FRAME_OVERHEAD + len; // seguridad: tamaño esperado de la trama
+  if (expectedLen > FRAME_MAX_LEN) {
+    Serial.println(">>:Error interno: frame demasiado grande");
+    return;
+  }
+
   uint8_t frame[FRAME_MAX_LEN];
   int idx = 0;
-  
+
   frame[idx++] = BYTE_INICIO;
 
   copiarMac(frame, idx, MAC_ORIGEN);
