@@ -6,9 +6,68 @@ const int pinLaser = 13;
 const int pinSensor = A0;
 
 // CONFIGURACIÓN DE PARÁMETROS
-const int umbral = 100;     // Ajusta según la potencia de tu láser
-const int delayBit = 50;    // Milisegundos por bit (Sincronización)
-const int startPulse = 100; // Pulso inicial para despertar al receptor
+const int umbral = 100;         // Misma calibración base del protocolo LUX-RING
+const int bitTimeMs = 20;       // Duración de bit según RFC actualizado (50 Hz)
+const int startPulseMs = 40;    // Pulso de inicio: 2 bits para sincronizar
+const int gapEntreBytesMs = 40; // Espacio entre bytes para reducir falsas detecciones
+
+bool leerBitSensor()
+{
+    return analogRead(pinSensor) > umbral;
+}
+
+void escribirBitLaser(bool bit)
+{
+    digitalWrite(pinLaser, bit ? HIGH : LOW);
+    delay(bitTimeMs);
+}
+
+void enviarPulsoInicio()
+{
+    digitalWrite(pinLaser, HIGH);
+    delay(startPulseMs);
+    digitalWrite(pinLaser, LOW);
+    delay(bitTimeMs);
+}
+
+void transmitirByte(uint8_t b)
+{
+    enviarPulsoInicio();
+
+    for (uint8_t bit = 0; bit < 8; bit++)
+    {
+        escribirBitLaser(bitRead(b, bit));
+    }
+
+    digitalWrite(pinLaser, LOW);
+    delay(gapEntreBytesMs);
+}
+
+bool hayInicioDeByte()
+{
+    if (!leerBitSensor())
+    {
+        return false;
+    }
+
+    delay(startPulseMs);
+    return !leerBitSensor();
+}
+
+uint8_t recibirByte()
+{
+    uint8_t valor = 0;
+
+    // Muestreo en el centro del primer bit.
+    delay(bitTimeMs / 2);
+    for (uint8_t bit = 0; bit < 8; bit++)
+    {
+        bitWrite(valor, bit, leerBitSensor() ? 1 : 0);
+        delay(bitTimeMs);
+    }
+
+    return valor;
+}
 
 void setup()
 {
@@ -29,69 +88,28 @@ void loop()
     }
 
     // --- PARTE 2: RECEPCIÓN (RX) ---
-    int lectura = analogRead(pinSensor);
-
-    // Si la luz supera el umbral, detectamos un posible bit de inicio
-    if (lectura > umbral)
+    if (hayInicioDeByte())
     {
-        recibirMensaje();
+        recibirByteYMostrar();
     }
 }
 
 // Función para convertir texto en pulsos de luz
-void transmitirMensaje(String msg)
+void transmitirMensaje(const String &msg)
 {
     for (int i = 0; i < msg.length(); i++)
     {
-        char c = msg[i];
-
-        // 1. Bit de Inicio (Start Bit)
-        digitalWrite(pinLaser, HIGH);
-        delay(startPulse);
-        digitalWrite(pinLaser, LOW);
-        delay(delayBit);
-
-        // 2. Envío del byte (8 bits)
-        for (int bit = 0; bit < 8; bit++)
-        {
-            bool estado = bitRead(c, bit);
-            digitalWrite(pinLaser, estado);
-            delay(delayBit);
-        }
-
-        // 3. Espacio entre caracteres
-        digitalWrite(pinLaser, LOW);
-        delay(delayBit * 2);
+        transmitirByte((uint8_t)msg[i]);
     }
+
     Serial.print(">>> Enviado: ");
     Serial.println(msg);
 }
 
 // Función para leer los pulsos y convertirlos en texto
-void recibirMensaje()
+void recibirByteYMostrar()
 {
-    char caracterRecibido = 0;
-
-    // Esperamos a que pase el pulso de inicio
-    delay(startPulse + (delayBit / 2));
-
-    // Leemos los 8 bits
-    for (int bit = 0; bit < 8; bit++)
-    {
-        int lectura = analogRead(pinSensor);
-        if (lectura > umbral)
-        {
-            bitWrite(caracterRecibido, bit, 1);
-        }
-        else
-        {
-            bitWrite(caracterRecibido, bit, 0);
-        }
-        delay(delayBit);
-    }
-
-    Serial.print(caracterRecibido); // Imprime el caracter en el monitor
-
-    // Pequeña pausa para no detectar el mismo pulso dos veces
-    delay(delayBit);
+    char caracterRecibido = (char)recibirByte();
+    Serial.println(caracterRecibido);
+    delay(bitTimeMs);
 }
