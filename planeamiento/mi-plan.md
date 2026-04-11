@@ -14,15 +14,15 @@
 Fisica:
 
 - Medio: Aire
-- Emisor: LED
-- Receptor: Fotodiodo / sensor de luz
+- Emisor: LASER
+- Receptor: LDR
 - Tipo de señal: Óptica (luz visible)
 - Modulacion: (OOK - On-Off Keying)
   - sin luz = 0
   - Con luz = 1
 - Codificacion de linea OOK
-- Frecuencia de modulación es 100 Hz
-- Tiempo de bit: 10ms por bit, velocidad de segura para minimizar errores
+- Frecuencia de modulación es 50 Hz
+- Tiempo de bit: 20ms por bit, velocidad de segura para minimizar errores
 
 > Notas:  
 > Li-Fi (Light Fidelity) o Comunicaciones por Luz Visible
@@ -42,8 +42,8 @@ Enlace de datos
       - MAC Destino (6B)
     - Longitud (1B): indica cuanto mide los datos/playload
     - Control (1B): indica el paquete actual y la cantidad maxima (0000 | 0000)
-      - primeros 4bits: paquete actual
-      - siguientes 4bits: cantidad de paquetes que se enviaran (total)
+      - primeros 4bits: paquete actual [1-15]
+      - siguientes 4bits: cantidad de paquetes que se enviaran (total: [1-15])
   - Datos / Payload: envia de 1 a 32 Bytes
   - Trailer
     - Deteccione errores (1B): CheckSum
@@ -51,7 +51,7 @@ Enlace de datos
 
     resumen `[Inicio: 1B][MACs: 12B][Longitud: 1B][Control: 1B][Datos: Var][CheckSum: 1B][Fin: 1B]`
 
-    Header = 1B + 6B*2 + 1B + 1B = 15 Bytes
+    Header = 1B + 6B\*2 + 1B + 1B = 15 Bytes
     Datos = max 32 B
     Datos = min 1-32 Bytes
     Trailer = 1B + 1B = 2 Bytes
@@ -87,15 +87,21 @@ Encriptacion para los datos: método simple AES (simétrico), usa una clave para
 
 1 Control de salida/entrada
 
-Envio de mensaje, Recepcion. Se muestra un panel de entrada y salida, por cada mensaje limpia y vuelve a imprirmir. Permite ver mensajes de error de recepcion y los mensajes enviados
+Envio de mensaje ingresado en consola.
+se muestra el en la salida de consola lo siguiente:
+
+- Envio/Entrada:
+  - para envio se muestra con ">>:"
+  - para recepcion se muestra con "<<:"
+
+- Limite por linea:
+  - Para los mensajes se muestra 4 paquete por linea (`32*4`), si son mas de 4 se imrpime en la siguiente linea los siguentes 4. Asi conforme la cantidad de paquetes
+- En caso de fallo:
+  - de recepcion de mensaje se muestra el error: "<<:Fallos recepcion de mensaje: [tipo de fallo]"
 
 ```
-Enviados        | Recibidos
-mensaje enviado |
-                | mensaje recibido
-mensaje largo   |
-Enviados        |
-                | mensaje largo 
-                | recibido
-                | Fallos recepcion de mensaje: [tipo de fallo]
+Enviados / Recibidos
+>>:mensaje enviado
+<<:mensaje recibido
+<<:Fallos recepcion de mensaje: [tipo de fallo]
 ```

@@ -7,10 +7,10 @@ Autores: [nombres]
 ## 1. Capa Física
 
 - **Codificación:** OOK (On-Off Keying). Un bit '1' se transmite como luz encendida (LED ON), un bit '0' como luz apagada (LED OFF). La codificación de línea es idéntica a la modulación.
-- **Duración de bit:** 10 ms por bit (frecuencia de modulación: 100 Hz).
+- **Duración de bit:** 20 ms por bit (frecuencia de modulación: 50 Hz).
 - **Medio:** Aire, usando luz visible.
-- **Emisor:** LED
-- **Receptor:** Fotodiodo o sensor de luz
+- **Emisor:** LASER
+- **Receptor:** LDR (sensor de luz)
 - **Sincronización:** El inicio de trama se detecta por la secuencia especial de inicio (11111100) en el campo de cabecera.
 - **PDU:** Bits
 
@@ -18,22 +18,30 @@ Autores: [nombres]
 
 - **Formato de trama:**
 
-| Campo       | Tamaño | Descripción                                    |
-| ----------- | ------ | ---------------------------------------------- |
-| Inicio      | 1 B    | Secuencia fija: 11111100                       |
-| MAC Origen  | 6 B    | Dirección MAC del emisor                       |
-| MAC Destino | 6 B    | Dirección MAC del receptor                     |
-| Longitud    | 1 B    | Tamaño de los datos/payload (en bytes)         |
-| Control     | 1 B    | 4 bits: paquete actual, 4 bits: total paquetes |
-| Datos       | 1-32 B | Payload cifrado                                |
-| CheckSum    | 1 B    | Suma de los bits de datos, mod 256             |
-| Fin         | 1 B    | Secuencia fija: 00000000                       |
+| Campo       | Tamaño | Descripción                               |
+| ----------- | ------ | ----------------------------------------- |
+| Inicio      | 1 B    | Secuencia fija: 11111100                  |
+| MAC Origen  | 6 B    | Dirección MAC del emisor                  |
+| MAC Destino | 6 B    | Dirección MAC del receptor                |
+| Longitud    | 1 B    | Tamaño de los datos/payload (en bytes)    |
+| Control     | 1 B    | 4 bits actual (1-15), 4 bits total (1-15) |
+| Datos       | 1-32 B | Payload cifrado                           |
+| CheckSum    | 1 B    | Suma de los bits de datos, mod 256        |
+| Fin         | 1 B    | Secuencia fija: 00000000                  |
 
 - **Dirección:** MAC de origen y destino (6 bytes cada una).
 - **Detección de errores:** CheckSum de 1 byte (suma de bits de datos, si excede 255 se descarta el acarreo y se usan los 8 bits inferiores).
-- **Control:** Permite dividir mensajes largos en varios paquetes (paquete actual / total de paquetes).
+- **Control:** Permite dividir mensajes largos en varios paquetes (paquete actual / total de paquetes), con numeración explícita en rango 1..15.
 - **Tipo de enlace:** Simplex, sin confirmación ni retransmisión.
 - **Notas:** El payload máximo es 32 bytes para evitar desincronización.
+
+## 2.1 Formato de salida por consola
+
+- **Prefijo de envío:** `>>:`
+- **Prefijo de recepción:** `<<:`
+- **Errores de recepción:** `<<:Fallos recepcion de mensaje: [tipo de fallo]`
+- **Límite de impresión por línea:** 4 paquetes por línea (128 bytes = 32\*4). Si el mensaje supera ese tamaño, se imprime en líneas consecutivas.
+- **Numeración mostrada:** cada línea puede incluir el rango de paquetes mostrado, por ejemplo: `>>:[paq 1-4/10] ...` y `<<:[paq 5-8/10] ...`
 
 ## 3. Capa de Presentación / Seguridad
 
