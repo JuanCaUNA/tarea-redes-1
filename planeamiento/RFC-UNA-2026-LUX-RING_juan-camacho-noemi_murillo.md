@@ -1,13 +1,13 @@
-# RFC-UNA-2026-GRUPOX
+# RFC-UNA-2026
 
 Protocolo LUX-RING para Comunicación en Anillo de Luz
-Grupo: [nombre del grupo]
-Autores: [nombres]
+Grupo: J-N
+Autores: Juan Carlos Camacho Solano, Noemi Murillo Godínez
 
 ## 1. Capa Física
 
 - **Codificación:** OOK (On-Off Keying). Un bit '1' se transmite como luz encendida (LED ON), un bit '0' como luz apagada (LED OFF). La codificación de línea es idéntica a la modulación.
-- **Duración de bit:** 20 ms por bit (frecuencia de modulación: 50 Hz).
+- **Duración de bit:** 50 ms por bit (frecuencia de modulación: 50 Hz).
 - **Medio:** Aire, usando luz visible.
 - **Emisor:** LASER
 - **Receptor:** LDR (sensor de luz)
