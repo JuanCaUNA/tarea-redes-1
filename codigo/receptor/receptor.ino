@@ -1,6 +1,23 @@
-const int pinSensor = A0;         // Receptor para LUX-RING
-const int umbral = 100;           // ajustar según sensor
-const int bitTimeMs = 20;         // tiempo por bit (20 ms)
+/* =============================================================
+ * RECEPTOR - RFC-UNA-2026 / Protocolo LUX-RING
+ * Autores RFC: Juan Carlos Camacho Solano, Noemi Murillo Godínez
+ * =============================================================
+ *
+ * Capa Física:
+ *   - OOK: luz ON = '1', luz OFF = '0'
+ *   - Duración de bit: 50 ms ( Hz)
+ *   - Sincronización: detección del byte de inicio 0xFC (11111100)
+ *
+ * Formato de trama:
+ *   [Inicio 1B][MAC_Orig 6B][MAC_Dest 6B][Longitud 1B][Control 1B]
+ *   [Datos 1-32B][CheckSum 1B][Fin 1B]
+ *
+ * Seguridad: AES-128 con clave precompartida de 16 bytes
+ * ============================================================= */
+
+const int pinSensor = A0;  // Receptor para LUX-RING
+const int umbral = 100;    // ajustar según sensor
+const int bitTimeMs = 20;  // tiempo por bit (20 ms)
 const uint8_t MAX_PAQUETES = 15;
 const uint8_t MAX_PAYLOAD = 32;
 const uint8_t BYTE_INICIO = 0xFC;
@@ -24,7 +41,7 @@ struct FrameRx {
   uint8_t fin;
 };
 
-PaqueteRecibido bufferPaquetes[MAX_PAQUETES]; // máximo 15 paquetes (4 bits)
+PaqueteRecibido bufferPaquetes[MAX_PAQUETES];  // máximo 15 paquetes (4 bits)
 int totalPaquetesEsperados = 0;
 int paquetesRecibidos = 0;
 
@@ -197,7 +214,7 @@ bool almacenarPaquete(const FrameRx &frame, uint8_t paqActual, uint8_t totalPaq)
 void reconstruirMensaje(int totalPaq) {
   char mensajeCompleto[(MAX_PAYLOAD * MAX_PAQUETES) + 1];
   int pos = 0;
-  
+
   for (int i = 0; i < totalPaq; i++) {
     if (bufferPaquetes[i].recibido) {
       for (int j = 0; j < bufferPaquetes[i].len; j++) {
