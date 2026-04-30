@@ -15,251 +15,351 @@
  * Seguridad: AES-128 con clave precompartida de 16 bytes
  * ============================================================= */
 
-const int pinSensor = A0;  // Receptor para LUX-RING
-const int umbral = 100;    // ajustar según sensor
-const int bitTimeMs = 20;  // tiempo por bit (20 ms)
-const uint8_t MAX_PAQUETES = 15;
-const uint8_t MAX_PAYLOAD = 32;
-const uint8_t BYTE_INICIO = 0xFC;
-const uint8_t BYTE_FIN = 0x00;
-const uint8_t MAC_LEN = 6;
-const uint8_t PAQUETES_POR_LINEA = 4;
-const uint16_t BYTES_POR_LINEA = MAX_PAYLOAD * PAQUETES_POR_LINEA;
+// #include <AESLib.h>   // AES deshabilitado
 
-// Buffer para reconstrucción de mensajes fragmentados
-struct PaqueteRecibido {
-  bool recibido;
-  uint8_t len;
-  uint8_t payload[MAX_PAYLOAD];
-};
+// ── Pines y tiempos ──────────────────────────────────────────
+const int PIN_LDR = A0;
 
-struct FrameRx {
-  uint8_t len;
-  uint8_t control;
-  uint8_t payload[MAX_PAYLOAD];
-  uint8_t checksum;
-  uint8_t fin;
-};
+// *** AJUSTAR según calibración ***
+const int UMBRAL = 20;
+// * 50 ms en microsegundos (DEBE COINCIDIR CON EMISOR)
+const unsigned long DUR_BIT_US = 50 * 1000UL;
+// * Muestreo a mitad del bit
+const unsigned long MUESTREO_US = DUR_BIT_US / 2;
 
-PaqueteRecibido bufferPaquetes[MAX_PAQUETES];  // máximo 15 paquetes (4 bits)
-int totalPaquetesEsperados = 0;
-int paquetesRecibidos = 0;
+// !New
+// * Tiempo minimo de silencio antes de sincronizar
+const unsigned long SILENCIO_US = DUR_BIT_US * 2;
+// * ventana de busqueda del byte de inicio
+const unsigned int MAX_SYNC_BITS = 200;
 
-void limpiarBuffer() {
-  for (uint8_t i = 0; i < MAX_PAQUETES; i++) {
-    bufferPaquetes[i].recibido = false;
-    bufferPaquetes[i].len = 0;
-  }
+// ── Constantes del protocolo ─────────────────────────────────
+const byte INICIO_TRAMA = 0xFC;  // 11111100
+const byte FIN_TRAMA = 0x00;     // 00000000
+const byte MAX_PAYLOAD = 32;     // bytes máximo de datos cifrados
+
+// ── Identidad del nodo (MAC propia, 6 bytes) ─────────────────
+const byte MI_MAC[6] = { 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
+
+// ── Clave AES-128 precompartida (16 bytes) ───────────────────
+// DEBE coincidir exactamente con la clave del emisor
+// AES deshabilitado: clave no usada
+
+// ── Buffer para reensamblado de paquetes múltiples ───────────
+// Soporta hasta 15 paquetes × 32 bytes = 480 bytes máx (campo Control: 4 bits)
+const int MAX_PAQUETES = 15;
+byte mensajeBuffer[MAX_PAQUETES * MAX_PAYLOAD];
+bool paquetesRecibidos[MAX_PAQUETES];  // registro de qué paquetes llegaron
+int totalPaquetes = 0;
+int contadorRecibidos = 0;
+unsigned long nextBitStartUs = 0;
+
+// ════════════════════════════════════════════════════════════
+//  Funciones de capa física
+// ════════════════════════════════════════════════════════════
+
+bool hayLuz() {
+  return analogRead(PIN_LDR) < UMBRAL;
 }
 
-void reiniciarRecepcionMensaje(uint8_t totalPaq) {
-  limpiarBuffer();
-  totalPaquetesEsperados = totalPaq;
-  paquetesRecibidos = 0;
-}
+// Espera un flanco de subida (oscuridad -> luz) despues de un silencio minimo.
+// Devuelve false si no aparece en el tiempo dado.
+bool esperarFlancoSubida(unsigned long timeoutUs) {
+  unsigned long t0 = micros();
+  unsigned long silencioInicio = 0;
+  bool enSilencio = false;
 
-void descartarBytes(uint8_t cantidad) {
-  for (uint8_t i = 0; i < cantidad; i++) {
-    readByteFromSensor();
-  }
-}
+  while (micros() - t0 < timeoutUs) {
+    if (hayLuz()) {
+      enSilencio = false;
+      continue;
+    }
 
-void copiarPayload(uint8_t *destino, const uint8_t *origen, uint8_t len) {
-  for (uint8_t i = 0; i < len; i++) {
-    destino[i] = origen[i];
-  }
-}
+    if (!enSilencio) {
+      enSilencio = true;
+      silencioInicio = micros();
+    }
 
-void reportarErrorRecepcion(const char *detalle) {
-  Serial.print("<<:Fallos recepcion de mensaje: ");
-  Serial.println(detalle);
-}
-
-void setup() {
-  Serial.begin(9600);
-  pinMode(pinSensor, INPUT);
-  Serial.println("<<:RECEPTOR LUX-RING listo");
-  reiniciarRecepcionMensaje(0);
-}
-
-void loop() {
-  if (!hayInicioDeTrama()) {
-    return;
-  }
-
-  FrameRx frame;
-  if (!leerFrame(frame)) {
-    return;
-  }
-
-  uint8_t paqActual = 0;
-  uint8_t totalPaq = 0;
-  if (!decodificarControl(frame.control, paqActual, totalPaq)) {
-    reportarErrorRecepcion("control invalido");
-    return;
-  }
-
-  if (!validarChecksumYFin(frame)) {
-    return;
-  }
-
-  if (!almacenarPaquete(frame, paqActual, totalPaq)) {
-    return;
-  }
-
-  Serial.print("<<:[paq ");
-  Serial.print(paqActual);
-  Serial.print("/");
-  Serial.print(totalPaq);
-  Serial.println("] recibido");
-
-  if (paquetesRecibidos == totalPaquetesEsperados) {
-    reconstruirMensaje(totalPaquetesEsperados);
-    reiniciarRecepcionMensaje(0);
-  }
-}
-
-bool hayInicioDeTrama() {
-  int lectura = analogRead(pinSensor);
-  if (lectura <= umbral) return false;
-
-  uint8_t inicio = readByteFromSensor();
-  return (inicio == BYTE_INICIO);
-}
-
-bool leerFrame(FrameRx &frame) {
-  // Leer y descartar MAC origen/destino para este escenario
-  descartarBytes(MAC_LEN);
-  descartarBytes(MAC_LEN);
-
-  frame.len = readByteFromSensor();
-  frame.control = readByteFromSensor();
-
-  if (!validarLongitud(frame.len)) {
-    reportarErrorRecepcion("longitud invalida");
-    return false;
-  }
-
-  for (int i = 0; i < frame.len; i++) {
-    frame.payload[i] = readByteFromSensor();
-  }
-
-  frame.checksum = readByteFromSensor();
-  frame.fin = readByteFromSensor();
-  return true;
-}
-
-bool validarLongitud(uint8_t len) {
-  return (len > 0 && len <= MAX_PAYLOAD);
-}
-
-bool decodificarControl(uint8_t control, uint8_t &paqActual, uint8_t &totalPaq) {
-  paqActual = (control >> 4) & 0x0F;
-  totalPaq = control & 0x0F;
-  return (paqActual > 0 && paqActual <= MAX_PAQUETES && totalPaq > 0 && totalPaq <= MAX_PAQUETES);
-}
-
-uint8_t calcularChecksum(const uint8_t *data, uint8_t len) {
-  uint16_t sum = 0;
-  for (int i = 0; i < len; i++) {
-    sum += data[i];
-  }
-  return (uint8_t)(sum & 0xFF);
-}
-
-bool validarChecksumYFin(const FrameRx &frame) {
-  if (frame.fin != BYTE_FIN) {
-    reportarErrorRecepcion("fin de trama invalido");
-    return false;
-  }
-
-  uint8_t esperado = calcularChecksum(frame.payload, frame.len);
-  if (esperado != frame.checksum) {
-    Serial.print("<<:Fallos recepcion de mensaje: checksum falla [esperado: ");
-    Serial.print(esperado);
-    Serial.print(", recibido: ");
-    Serial.print(frame.checksum);
-    Serial.println("]");
-    return false;
-  }
-
-  return true;
-}
-
-bool almacenarPaquete(const FrameRx &frame, uint8_t paqActual, uint8_t totalPaq) {
-  // Primer paquete de un nuevo mensaje
-  if (paquetesRecibidos == 0) {
-    reiniciarRecepcionMensaje(totalPaq);
-  }
-
-  if (totalPaq != totalPaquetesEsperados) {
-    reportarErrorRecepcion("total de paquetes inconsistente");
-    return false;
-  }
-
-  uint8_t idx = paqActual - 1;
-  if (bufferPaquetes[idx].recibido) {
-    reportarErrorRecepcion("paquete duplicado ignorado");
-    return false;
-  }
-
-  bufferPaquetes[idx].recibido = true;
-  bufferPaquetes[idx].len = frame.len;
-  copiarPayload(bufferPaquetes[idx].payload, frame.payload, frame.len);
-
-  paquetesRecibidos++;
-  return true;
-}
-
-void reconstruirMensaje(int totalPaq) {
-  char mensajeCompleto[(MAX_PAYLOAD * MAX_PAQUETES) + 1];
-  int pos = 0;
-
-  for (int i = 0; i < totalPaq; i++) {
-    if (bufferPaquetes[i].recibido) {
-      for (int j = 0; j < bufferPaquetes[i].len; j++) {
-        mensajeCompleto[pos++] = (char)bufferPaquetes[i].payload[j];
+    if (micros() - silencioInicio >= SILENCIO_US) {
+      while (!hayLuz()) {
+        if (micros() - t0 > timeoutUs) return false;
       }
+      nextBitStartUs = micros();
+      return true;
     }
   }
-  mensajeCompleto[pos] = '\0';
+  return false;
+}
 
-  int inicio = 0;
-  while (inicio < pos) {
-    int fin = inicio + BYTES_POR_LINEA;
-    if (fin > pos) fin = pos;
+// Espera a un tiempo absoluto (maneja overflow de micros).
+void esperarHasta(unsigned long tObjetivo) {
+  while ((long)(micros() - tObjetivo) < 0) {
+    // espera activa
+  }
+}
 
-    int paqInicio = (inicio / MAX_PAYLOAD) + 1;
-    int paqFin = ((fin + MAX_PAYLOAD - 1) / MAX_PAYLOAD);
-    if (paqFin > totalPaq) paqFin = totalPaq;
+// Lee un bit alineado a la base de tiempo interna.
+bool recibirBitSync() {
+  unsigned long sampleTime = nextBitStartUs + MUESTREO_US;
+  esperarHasta(sampleTime);
+  bool bit = hayLuz();
+  nextBitStartUs += DUR_BIT_US;
+  esperarHasta(nextBitStartUs);
+  return bit;
+}
+
+// Lee un byte OOK completo, MSB primero, usando sincronizacion por bits.
+byte recibirByteSync() {
+  byte b = 0;
+  for (int i = 7; i >= 0; i--) {
+    if (recibirBitSync()) bitSet(b, i);
+  }
+  return b;
+}
+
+// Busca el byte de inicio 0xFC desplazando bit a bit.
+bool buscarInicioTrama() {
+  byte shift = 0;
+  for (unsigned int i = 0; i < MAX_SYNC_BITS; i++) {
+    shift = (byte)((shift << 1) | (recibirBitSync() ? 1 : 0));
+    if (shift == INICIO_TRAMA) return true;
+  }
+  return false;
+}
+
+// ════════════════════════════════════════════════════════════
+//  Funciones auxiliares
+// ════════════════════════════════════════════════════════════
+
+// Compara dos MACs de 6 bytes. Devuelve true si son iguales.
+bool macIgual(const byte* a, const byte* b) {
+  for (int i = 0; i < 6; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+// Imprime una MAC como HH:HH:HH:HH:HH:HH
+void imprimirMAC(const byte* mac) {
+  for (int i = 0; i < 6; i++) {
+    if (mac[i] < 0x10) Serial.print("0");
+    Serial.print(mac[i], HEX);
+    if (i < 5) Serial.print(":");
+  }
+}
+
+// Descifra un bloque de 'len' bytes con AES-128 en modo ECB.
+// Los datos descifrados quedan en el mismo buffer.
+// AESLib trabaja en bloques de 16 bytes; se rellena con 0 si len < 16.
+void descifrarAES(byte* datos, byte len) {
+  // AES deshabilitado: no se modifica el payload
+  (void)datos;
+  (void)len;
+}
+
+// ════════════════════════════════════════════════════════════
+//  Impresión formateada según RFC (prefijo <<:, 4 paq/línea)
+// ════════════════════════════════════════════════════════════
+
+// Imprime el mensaje final ensamblado respetando el límite de
+// 4 paquetes (128 bytes) por línea de consola.
+void imprimirMensaje(const char* texto, int totalBytes, int totalPaq) {
+  // Cuántos paquetes entran por línea
+  const int PAQ_POR_LINEA = 4;
+  const int BYTES_POR_LINEA = PAQ_POR_LINEA * MAX_PAYLOAD;  // 128
+
+  int paqImpreso = 0;
+  int byteOffset = 0;
+
+  while (paqImpreso < totalPaq) {
+    int paqDesde = paqImpreso + 1;
+    int paqHasta = min(paqImpreso + PAQ_POR_LINEA, totalPaq);
 
     Serial.print("<<:[paq ");
-    Serial.print(paqInicio);
+    Serial.print(paqDesde);
     Serial.print("-");
-    Serial.print(paqFin);
+    Serial.print(paqHasta);
     Serial.print("/");
     Serial.print(totalPaq);
     Serial.print("] ");
 
-    for (int i = inicio; i < fin; i++) {
-      Serial.write(mensajeCompleto[i]);
+    // Imprimir los bytes correspondientes a esos paquetes
+    int bytesLinea = (paqHasta - paqImpreso) * MAX_PAYLOAD;
+    int bytesFin = min(byteOffset + bytesLinea, totalBytes);
+    for (int i = byteOffset; i < bytesFin; i++) {
+      if (texto[i] == '\0') break;
+      Serial.print(texto[i]);
     }
     Serial.println();
-    inicio = fin;
+
+    byteOffset += bytesLinea;
+    paqImpreso += (paqHasta - paqImpreso);
   }
 }
 
-uint8_t readByteFromSensor() {
-  uint8_t result = 0;
-  // sincronizar leyendo la mitad del bit inicial
-  delay(bitTimeMs / 2);
-  for (int bit = 0; bit < 8; bit++) {
-    int v = analogRead(pinSensor);
-    if (v > umbral) bitWrite(result, bit, 1);
-    else bitWrite(result, bit, 0);
-    delay(bitTimeMs);
+// ════════════════════════════════════════════════════════════
+//  Reiniciar buffer de reensamblado
+// ════════════════════════════════════════════════════════════
+void resetearBuffer() {
+  memset(mensajeBuffer, 0, sizeof(mensajeBuffer));
+  memset(paquetesRecibidos, false, sizeof(paquetesRecibidos));
+  totalPaquetes = 0;
+  contadorRecibidos = 0;
+}
+
+// ════════════════════════════════════════════════════════════
+//  setup / loop
+// ════════════════════════════════════════════════════════════
+
+void setup() {
+  Serial.begin(9600);
+  resetearBuffer();
+  Serial.println("Receptor LUX-RING listo. Esperando trama...");
+}
+
+void loop() {
+
+  // ── PASO 1: Esperar flanco de subida para alinear bits ───
+  if (!esperarFlancoSubida(500000UL)) return;
+
+  // ── PASO 2: Buscar byte de inicio 0xFC bit a bit ─────────
+  if (!buscarInicioTrama()) {
+    Serial.println("<<:Fallos recepcion de mensaje: [no se encontro byte de inicio]");
+    while (hayLuz())
+      ;
+    return;
   }
-  // pequeña pausa antes del siguiente byte
-  delay(bitTimeMs / 2);
-  return result;
+
+  // ── PASO 3: Leer campos de cabecera ──────────────────────
+  byte macOrigen[6], macDestino[6];
+
+  for (int i = 0; i < 6; i++) macOrigen[i] = recibirByteSync();
+  for (int i = 0; i < 6; i++) macDestino[i] = recibirByteSync();
+
+  byte longitud = recibirByteSync();  // tamaño del payload cifrado
+  byte control = recibirByteSync();   // [7:4] paq_actual, [3:0] paq_total
+
+  byte paqActual = (control >> 4) & 0x0F;  // bits altos
+  byte paqTotal = (control)&0x0F;          // bits bajos
+
+  // ── PASO 4: Validar destino ───────────────────────────────
+  if (!macIgual(macDestino, MI_MAC)) {
+    Serial.print("<<:Fallos recepcion de mensaje: [trama para otra MAC ");
+    imprimirMAC(macDestino);
+    Serial.println("]");
+    // Consumir el resto de la trama para limpiar el canal
+    for (int i = 0; i < longitud; i++) recibirByteSync();
+    recibirByteSync();  // checksum
+    recibirByteSync();  // fin
+    return;
+  }
+
+  // ── PASO 5: Validar longitud ──────────────────────────────
+  if (longitud == 0 || longitud > MAX_PAYLOAD) {
+    Serial.print("<<:Fallos recepcion de mensaje: [longitud invalida ");
+    Serial.print(longitud);
+    Serial.println("]");
+    while (hayLuz())
+      ;
+    return;
+  }
+
+  // ── PASO 6: Validar números de paquete ───────────────────
+  if (paqActual == 0 || paqTotal == 0 || paqActual > paqTotal || paqTotal > MAX_PAQUETES) {
+    Serial.print("<<:Fallos recepcion de mensaje: [control invalido 0x");
+    Serial.print(control, HEX);
+    Serial.println("]");
+    while (hayLuz())
+      ;
+    return;
+  }
+
+  // ── PASO 7: Leer payload cifrado ─────────────────────────
+  byte datos[MAX_PAYLOAD];
+  byte checkCalc = 0;
+
+  for (int i = 0; i < longitud; i++) {
+    datos[i] = recibirByteSync();
+    checkCalc += datos[i];  // CheckSum = suma de bytes de datos mod 256
+  }
+  // checkCalc ya es mod 256 por desbordamiento natural del byte
+
+  // ── PASO 8: Verificar checksum ───────────────────────────
+  byte checkRecibido = recibirByteSync();
+
+  // ── PASO 9: Verificar byte de FIN ────────────────────────
+  byte fin = recibirByteSync();
+
+  if (checkCalc != checkRecibido) {
+    Serial.print("<<:Fallos recepcion de mensaje: [checksum calc=0x");
+    Serial.print(checkCalc, HEX);
+    Serial.print(" recibido=0x");
+    Serial.print(checkRecibido, HEX);
+    Serial.println("]");
+    return;
+  }
+
+  if (fin != FIN_TRAMA) {
+    Serial.print("<<:Fallos recepcion de mensaje: [fin invalido 0x");
+    Serial.print(fin, HEX);
+    Serial.println("]");
+    return;
+  }
+
+  // ── PASO 10: Descifrar payload AES-128 ───────────────────
+  descifrarAES(datos, longitud);
+
+  // ── PASO 11: Almacenar en buffer de reensamblado ─────────
+  // Si es el primer paquete del mensaje, inicializar buffer
+  if (paqActual == 1) {
+    resetearBuffer();
+    totalPaquetes = paqTotal;
+  } else if (totalPaquetes != paqTotal) {
+    // Inconsistencia: diferente total que el paquete 1
+    Serial.println("<<:Fallos recepcion de mensaje: [inconsistencia en total de paquetes]");
+    return;
+  }
+
+  // Guardar datos descifrados en la posición correcta del buffer
+  int offset = (paqActual - 1) * MAX_PAYLOAD;
+  if (paquetesRecibidos[paqActual - 1]) {
+    Serial.print("<<:Fallos recepcion de mensaje: [paq duplicado ");
+    Serial.print(paqActual);
+    Serial.println("]");
+    return;
+  }
+
+  memcpy(mensajeBuffer + offset, datos, longitud);
+  paquetesRecibidos[paqActual - 1] = true;
+  contadorRecibidos++;
+
+  // ── PASO 12: Si se completó el mensaje, imprimir ─────────
+  if (contadorRecibidos == totalPaquetes) {
+
+    // Calcular longitud real del texto (puede haber padding AES)
+    int totalBytes = totalPaquetes * MAX_PAYLOAD;
+    // Buscar fin real de string (null terminator del padding AES)
+    int longitudReal = 0;
+    for (int i = 0; i < totalBytes; i++) {
+      if (mensajeBuffer[i] == '\0') break;
+      longitudReal++;
+    }
+
+    // Mostrar información del remitente
+    Serial.print("<<:[De ");
+    imprimirMAC(macOrigen);
+    Serial.println("]");
+
+    // Imprimir mensaje respetando formato RFC (4 paq/línea)
+    imprimirMensaje((const char*)mensajeBuffer, longitudReal, totalPaquetes);
+
+    resetearBuffer();
+  } else {
+    // Paquete recibido pero mensaje incompleto aún
+    Serial.print("<<:[paq ");
+    Serial.print(paqActual);
+    Serial.print("/");
+    Serial.print(paqTotal);
+    Serial.println(" recibido, esperando resto...]");
+  }
 }
