@@ -17,13 +17,13 @@
 
 #include "aes_minimal.h"
 
-// ?? Pines y tiempos 
+// * Pines y tiempos 
 const int PIN_LDR = A0;
 const int UMBRAL = 20;
 const unsigned long DUR_BIT_US = 50 * 1000UL;
 const unsigned long MUESTREO_US = DUR_BIT_US / 2;
 
-// ?? Constantes del protocolo 
+// * Constantes del protocolo 
 const byte INICIO_TRAMA = 0xFC;
 const byte FIN_TRAMA = 0x00;
 const byte MAX_PAYLOAD = 32;
@@ -31,16 +31,16 @@ const byte MAX_PAQUETES = 15;
 const byte MAX_DATOS_PRIMER_PAQUETE = 30;
 const uint16_t MAX_MENSAJE_TOTAL = MAX_DATOS_PRIMER_PAQUETE + ((uint16_t)(MAX_PAQUETES - 1) * MAX_PAYLOAD);
 
-// ?? Identidad del nodo (MAC propia, 6 bytes) 
+// * Identidad del nodo (MAC propia, 6 bytes) 
 const byte MI_MAC[6] = { 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
 
-// ?? Clave AES-128 precompartida (16 bytes) 
+// * Clave AES-128 precompartida (16 bytes) 
 const uint8_t AES_KEY[AES_KEY_SIZE] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66 };
 
 static aes128_ctx_t aesCtx;
 static uint8_t aesInitFlag = 0;
 
-// ?? Buffer para reensamblado de paquetes multiples 
+// * Buffer para reensamblado de paquetes multiples 
 byte mensajeBuffer[MAX_MENSAJE_TOTAL];
 uint16_t paquetesRecibidos = 0;  // Bitfield: bit i = 1 si paquete i recibido
 uint8_t totalPaquetes = 0;
