@@ -32,7 +32,7 @@ const byte MAX_DATOS_PRIMER_PAQUETE = 30;
 const uint16_t MAX_MENSAJE_TOTAL = MAX_DATOS_PRIMER_PAQUETE + ((uint16_t)(MAX_PAQUETES - 1) * MAX_PAYLOAD);
 
 // * Identidad del nodo (MAC propia, 6 bytes) 
-const byte MI_MAC[6] = { 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
+const byte MI_MAC[6] = { 0x02, 0x02, 0x02, 0x02, 0x02, 0x02 };
 
 // * Clave AES-128 precompartida (16 bytes) 
 const uint8_t AES_KEY[AES_KEY_SIZE] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66 };
@@ -114,9 +114,14 @@ void esperarCanalLibre() {
 
 // ! Funciones auxiliares
 
-inline bool macIgual(const byte* a, const byte* b) {
-  for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
-  return true;
+inline uint8_t truncarMacA4Bits(uint8_t valor) {
+  // Conserva solo 4 bits para el ID MAC logico (0-15).
+  return (uint8_t)(valor & 0x0F);
+}
+
+inline uint8_t obtenerIdMac4Bits(const byte* mac) {
+  // Se ignoran los otros 5 bytes: solo se usa el primer byte truncado.
+  return truncarMacA4Bits(mac[0]);
 }
 
 inline void imprimirMAC(const byte* mac) {
@@ -243,9 +248,13 @@ void loop() {
   byte paqActual = (control >> 4) & 0x0F;
   byte paqTotal = control & 0x0F;
 
-  if (!macIgual(macDestino, MI_MAC)) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [trama para otra MAC "));
-    imprimirMAC(macDestino);
+  uint8_t idDestino4 = obtenerIdMac4Bits(macDestino);
+  uint8_t idPropio4 = obtenerIdMac4Bits(MI_MAC);
+  if (idDestino4 != idPropio4) {
+    Serial.print(F("<<:Fallos recepcion de mensaje: [trama para otro ID-MAC4 dest="));
+    Serial.print(idDestino4);
+    Serial.print(F(" propio="));
+    Serial.print(idPropio4);
     Serial.println(F("]"));
     for (int i = 0; i < longitud; i++) recibirByteSync();
     recibirByteSync();

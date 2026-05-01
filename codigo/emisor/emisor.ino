@@ -24,14 +24,18 @@ const uint8_t MAX_DATOS_PRIMER_PAQUETE = 30;
 const uint16_t MAX_MENSAJE_TOTAL = MAX_DATOS_PRIMER_PAQUETE + ((MAX_PAQUETES - 1) * MAX_PAYLOAD);
 
 // * Direcciones MAC (6 bytes)
-const uint8_t MAC_ORIGEN[6] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
-const uint8_t MAC_DESTINO[6] = { 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F };
+const uint8_t MAC_ORIGEN[6] = { 0x01, 0x01, 0x01, 0x01, 0x01, 0x01 };
 
 // * Clave AES-128 compartida
 const uint8_t AES_KEY[AES_KEY_SIZE] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66 };
 
 static aes128_ctx_t aesCtx;
 static uint8_t aesInitFlag = 0;
+
+inline uint8_t truncarMacA4Bits(uint8_t valor) {
+  // Conserva solo los 4 bits menos significativos (rango 0-15).
+  return (uint8_t)(valor & 0x0F);
+}
 
 uint8_t calcularNumeroPaquetes(uint16_t msgLen) {
   if (msgLen == 0) return 0;
@@ -128,18 +132,47 @@ void setup() {
   digitalWrite(pinLaser, LOW);
   inicializarAES();
   Serial.println(F(">>:EMISOR LUX-RING listo"));
-  Serial.println(F(">>:Escribe mensaje y presiona Enter"));
+  Serial.println(F(">>:Usa formato N:mensaje (N entre 0 y 15)"));
 }
 
 void loop() {
   if (Serial.available() > 0) {
-    String mensaje = Serial.readStringUntil('\n');
+    String entrada = Serial.readStringUntil('\n');
+    entrada.trim();
+
+    int separador = entrada.indexOf(':');
+    if (separador <= 0) {
+      Serial.println(F(">>:Formato invalido. Usa N:mensaje"));
+      return;
+    }
+
+    String macTexto = entrada.substring(0, separador);
+    String mensaje = entrada.substring(separador + 1);
+    macTexto.trim();
     mensaje.trim();
-    enviarMensajeConFragmentacion(mensaje);
+
+    if (macTexto.length() == 0 || mensaje.length() == 0) {
+      Serial.println(F(">>:Formato invalido. Usa N:mensaje"));
+      return;
+    }
+
+    int macValor = macTexto.toInt();
+    if (String(macValor) != macTexto || macValor < 0 || macValor > 15) {
+      Serial.println(F(">>:MAC destino invalida. Debe estar entre 0 y 15"));
+      return;
+    }
+
+    uint8_t macId4Bits = truncarMacA4Bits((uint8_t)macValor);
+    uint8_t macDestino[MAC_LEN];
+    for (uint8_t i = 0; i < MAC_LEN; i++) {
+      macDestino[i] = macId4Bits;
+    }
+
+    enviarMensajeConFragmentacion(mensaje, macDestino);
   }
 }
 
-void enviarMensajeConFragmentacion(const String &msg) {
+void enviarMensajeConFragmentacion(const String &msg, const uint8_t macDestino[MAC_LEN]) {
   uint16_t msgLen = (uint16_t)msg.length();
   if (msgLen == 0) return;
   if (msgLen > MAX_MENSAJE_TOTAL) {
@@ -151,7 +184,7 @@ void enviarMensajeConFragmentacion(const String &msg) {
     uint16_t datosPlainLen = obtenerLongitudDatosPaquete(msgLen, paqNum);
     uint16_t payloadPlainLen = (paqNum == 1) ? (uint16_t)(2 + datosPlainLen) : datosPlainLen;
     uint16_t payloadCifradoLen = obtenerLongitudCifradaPaquete(payloadPlainLen);
-    enviarPaquete(msg, msgLen, paqNum, numPaquetes, datosPlainLen, payloadCifradoLen);
+    enviarPaquete(msg, msgLen, paqNum, numPaquetes, datosPlainLen, payloadCifradoLen, macDestino);
     Serial.print(F(">>:[paq "));
     Serial.print(paqNum);
     Serial.print(F("/"));
@@ -162,7 +195,7 @@ void enviarMensajeConFragmentacion(const String &msg) {
   imprimirMensajePorLineas(msg, msgLen, numPaquetes);
 }
 
-void enviarPaquete(const String &msg, uint16_t msgLen, uint8_t paqNum, uint8_t totalPaq, uint16_t datosPlainLen, uint16_t payloadCifradoLen) {
+void enviarPaquete(const String &msg, uint16_t msgLen, uint8_t paqNum, uint8_t totalPaq, uint16_t datosPlainLen, uint16_t payloadCifradoLen, const uint8_t macDestino[MAC_LEN]) {
   if (datosPlainLen == 0) return;
 
   digitalWrite(pinLaser, LOW);
@@ -172,7 +205,7 @@ void enviarPaquete(const String &msg, uint16_t msgLen, uint8_t paqNum, uint8_t t
 
   transmitByteMSB(BYTE_INICIO);
   for (uint8_t i = 0; i < MAC_LEN; i++) transmitByteMSB(MAC_ORIGEN[i]);
-  for (uint8_t i = 0; i < MAC_LEN; i++) transmitByteMSB(MAC_DESTINO[i]);
+  for (uint8_t i = 0; i < MAC_LEN; i++) transmitByteMSB(macDestino[i]);
 
   transmitByteMSB((uint8_t)payloadCifradoLen);
   transmitByteMSB(((paqNum & 0x0F) << 4) | (totalPaq & 0x0F));
