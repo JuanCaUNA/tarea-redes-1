@@ -51,7 +51,7 @@ byte datosGlobal[MAX_PAYLOAD];   // Buffer reutilizable para datos
 byte datosCifradosGlobal[MAX_PAYLOAD];  // Buffer reutilizable para datos cifrados
 
 
-// Funciones de capa fisica
+// ! Funciones de capa fisica
 
 bool hayLuz() {
   return analogRead(PIN_LDR) < UMBRAL;
@@ -112,7 +112,7 @@ void esperarCanalLibre() {
   }
 }
 
-//  Funciones auxiliares
+// ! Funciones auxiliares
 
 inline bool macIgual(const byte* a, const byte* b) {
   for (int i = 0; i < 6; i++) if (a[i] != b[i]) return false;
@@ -216,7 +216,7 @@ void inicializarAES() {
   }
 }
 
-//  setup / loop
+// ! setup / loop
 
 void setup() {
   Serial.begin(9600);
@@ -270,7 +270,7 @@ void loop() {
     return;
   }
 
-  // VERIFICACIÓN ANTICIPADA: Para paquete 2+, verificar tamaño ANTES de leer datos
+  // * VERIFICACIÓN ANTICIPADA: Para paquete 2+, verificar tamaño ANTES de leer datos
   if (paqActual > 1 && totalPaquetes > 0 && mensajeLongitudEsperada > 0) {
     uint16_t textoLenEsperado = obtenerLongitudDatosPaquete(mensajeLongitudEsperada, paqActual);
     uint16_t cifradoEsperadoAntici = obtenerLongitudCifradaPaquete(textoLenEsperado);
@@ -282,7 +282,7 @@ void loop() {
       Serial.print(F(" recv="));
       Serial.print(longitud);
       Serial.println(F("]"));
-      // Saltar bytes restantes para mantener sincronización
+      // * Saltar bytes restantes para mantener sincronización
       for (int i = 0; i < longitud; i++) recibirByteSync();
       recibirByteSync();  // checksum
       recibirByteSync();  // fin
