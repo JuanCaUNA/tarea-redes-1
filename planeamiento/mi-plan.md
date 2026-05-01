@@ -21,8 +21,8 @@ Fisica:
   - sin luz = 0
   - Con luz = 1
 - Codificacion de linea OOK
-- Frecuencia de modulación es 50 Hz
-- Tiempo de bit: 20ms por bit, velocidad de segura para minimizar errores
+- Frecuencia de modulación es ? Hz
+- Tiempo de bit: 50ms por bit, velocidad de segura para minimizar errores
 
 > Notas:  
 > Li-Fi (Light Fidelity) o Comunicaciones por Luz Visible
