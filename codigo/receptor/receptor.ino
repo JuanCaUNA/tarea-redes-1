@@ -26,13 +26,12 @@ const unsigned long MUESTREO_US = DUR_BIT_US / 2;
 // * Constantes del protocolo 
 const byte INICIO_TRAMA = 0xFC;
 const byte FIN_TRAMA = 0x00;
-const byte MAX_PAYLOAD = 32;
+const byte MAX_PAYLOAD = 32;  // * Tamaño uniforme de todos los paquetes
 const byte MAX_PAQUETES = 15;
-const byte MAX_DATOS_PRIMER_PAQUETE = 30;
-const uint16_t MAX_MENSAJE_TOTAL = MAX_DATOS_PRIMER_PAQUETE + ((uint16_t)(MAX_PAQUETES - 1) * MAX_PAYLOAD);
+const uint16_t MAX_MENSAJE_TOTAL = MAX_PAYLOAD * MAX_PAQUETES;  // * 480 bytes máximo
 
 // * Identidad del nodo (MAC propia, 6 bytes) 
-const byte MI_MAC[6] = { 0x02, 0x02, 0x02, 0x02, 0x02, 0x02 };
+const byte MI_MAC[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 // * Clave AES-128 precompartida (16 bytes) 
 const uint8_t AES_KEY[AES_KEY_SIZE] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66 };
@@ -40,18 +39,21 @@ const uint8_t AES_KEY[AES_KEY_SIZE] = { 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37
 static aes128_ctx_t aesCtx;
 static uint8_t aesInitFlag = 0;
 
-// * Buffer para reensamblado de paquetes multiples 
+// * * Buffer para reensamblado de paquetes multiples 
 byte mensajeBuffer[MAX_MENSAJE_TOTAL];
-uint16_t paquetesRecibidos = 0;  // Bitfield: bit i = 1 si paquete i recibido
+// * Bitfield: bit i = 1 si paquete i recibido
+uint16_t paquetesRecibidos = 0;  
 uint8_t totalPaquetes = 0;
 uint8_t contadorRecibidos = 0;
 uint16_t mensajeLongitudEsperada = 0;
 unsigned long nextBitStartUs = 0;
-byte datosGlobal[MAX_PAYLOAD];   // Buffer reutilizable para datos
-byte datosCifradosGlobal[MAX_PAYLOAD];  // Buffer reutilizable para datos cifrados
+// * Buffer reutilizable para datos
+byte datosGlobal[MAX_PAYLOAD];   
+// * Buffer reutilizable para datos cifrados
+byte datosCifradosGlobal[MAX_PAYLOAD];  
 
 
-// ! Funciones de capa fisica
+// * ! Funciones de capa fisica
 
 bool hayLuz() {
   return analogRead(PIN_LDR) < UMBRAL;
@@ -112,15 +114,27 @@ void esperarCanalLibre() {
   }
 }
 
+void descartarBytes(uint8_t cantidad) {
+  for (uint8_t i = 0; i < cantidad; i++) {
+    recibirByteSync();
+  }
+}
+
+void descartarRestoTrama(uint8_t longitudPayload) {
+  descartarBytes(longitudPayload);
+  recibirByteSync();  // * checksum
+  recibirByteSync();  // * fin
+}
+
 // ! Funciones auxiliares
 
 inline uint8_t truncarMacA4Bits(uint8_t valor) {
-  // Conserva solo 4 bits para el ID MAC logico (0-15).
+  // * Conserva solo 4 bits para el ID MAC logico (0-15).
   return (uint8_t)(valor & 0x0F);
 }
 
 inline uint8_t obtenerIdMac4Bits(const byte* mac) {
-  // Se ignoran los otros 5 bytes: solo se usa el primer byte truncado.
+  // * Se ignoran los otros 5 bytes: solo se usa el primer byte truncado.
   return truncarMacA4Bits(mac[0]);
 }
 
@@ -132,25 +146,14 @@ inline void imprimirMAC(const byte* mac) {
   }
 }
 
-uint8_t calcularNumeroPaquetes(uint16_t msgLen) {
-  if (msgLen == 0) return 0;
-  if (msgLen <= MAX_DATOS_PRIMER_PAQUETE) return 1;
-
-  uint16_t restante = msgLen - MAX_DATOS_PRIMER_PAQUETE;
-  uint8_t numPaquetes = (uint8_t)(1 + ((restante + MAX_PAYLOAD - 1) / MAX_PAYLOAD));
-  return (numPaquetes > MAX_PAQUETES) ? MAX_PAQUETES : numPaquetes;
-}
-
 uint16_t obtenerLongitudDatosPaquete(uint16_t msgLen, uint8_t paqNum) {
   if (paqNum == 0 || msgLen == 0) return 0;
 
-  if (paqNum == 1) {
-    return (msgLen < MAX_DATOS_PRIMER_PAQUETE) ? msgLen : MAX_DATOS_PRIMER_PAQUETE;
-  }
-
-  uint16_t offset = MAX_DATOS_PRIMER_PAQUETE + (uint16_t)(paqNum - 2) * MAX_PAYLOAD;
+  // * Calcular offset de este paquete
+  uint16_t offset = (uint16_t)(paqNum - 1) * MAX_PAYLOAD;
   if (offset >= msgLen) return 0;
 
+  // * Bytes restantes desde este offset
   uint16_t restante = msgLen - offset;
   return (restante > MAX_PAYLOAD) ? MAX_PAYLOAD : restante;
 }
@@ -180,38 +183,14 @@ inline void imprimirDatosHex(const uint8_t* datos, uint16_t len) {
   }
 }
 
-void imprimirMensaje(const uint8_t* texto, uint16_t totalBytes, uint8_t totalPaq) {
-  const uint8_t PAQ_POR_LINEA = 4;
-  uint16_t byteOffset = 0;
-  uint8_t paqImpreso = 0;
-
-  while (paqImpreso < totalPaq && byteOffset < totalBytes) {
-    uint8_t paqDesde = paqImpreso + 1;
-    uint8_t paqHasta = paqImpreso + PAQ_POR_LINEA;
-    if (paqHasta > totalPaq) paqHasta = totalPaq;
-
-    uint16_t bytesLinea = 0;
-    for (uint8_t paq = paqDesde; paq <= paqHasta; paq++) {
-      bytesLinea += obtenerLongitudDatosPaquete(totalBytes, paq);
-    }
-
-    if (byteOffset + bytesLinea > totalBytes) {
-      bytesLinea = totalBytes - byteOffset;
-    }
-
-    Serial.print("<<:[paq ");
-    Serial.print(paqDesde);
-    Serial.print("-");
-    Serial.print(paqHasta);
-    Serial.print("/");
-    Serial.print(totalPaq);
-    Serial.print("] ");
-    Serial.write(texto + byteOffset, bytesLinea);
-    Serial.println();
-
-    byteOffset += bytesLinea;
-    paqImpreso = paqHasta;
-  }
+// * Imprime el mensaje completo junto con el ID de origen en formato <<:ipOrigen:Mensaje
+void imprimirMensajeCompleto(const byte* macOrigen, const uint8_t* texto, uint16_t totalBytes) {
+  uint8_t idOrigen4 = obtenerIdMac4Bits(macOrigen);
+  Serial.print(F("<<:"));
+  Serial.print(idOrigen4);
+  Serial.print(F(":"));
+  Serial.write(texto, totalBytes);
+  Serial.println();
 }
 
 void inicializarAES() {
@@ -234,7 +213,7 @@ void loop() {
   if (!esperarFlancoSubida(500000UL)) return;
 
   if (!buscarInicioTrama()) {
-    Serial.println(F("<<:Fallos recepcion de mensaje: [no se encontro byte de inicio]"));
+    Serial.println(F("<<:log:error: no se encontro byte de inicio"));
     esperarCanalLibre();
     return;
   }
@@ -251,28 +230,25 @@ void loop() {
   uint8_t idDestino4 = obtenerIdMac4Bits(macDestino);
   uint8_t idPropio4 = obtenerIdMac4Bits(MI_MAC);
   if (idDestino4 != idPropio4) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [trama para otro ID-MAC4 dest="));
+    Serial.print(F("<<:log:error: trama para otro destino. dest="));
     Serial.print(idDestino4);
     Serial.print(F(" propio="));
-    Serial.print(idPropio4);
-    Serial.println(F("]"));
-    for (int i = 0; i < longitud; i++) recibirByteSync();
-    recibirByteSync();
-    recibirByteSync();
+    Serial.println(idPropio4);
+
+    descartarRestoTrama(longitud);
     esperarCanalLibre();
     return;
   }
 
   if (longitud == 0 || longitud > MAX_PAYLOAD || (longitud % AES_BLOCK_SIZE) != 0) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [longitud invalida "));
+    Serial.print(F("<<:log:error: longitud invalida "));
     Serial.print(longitud);
-    Serial.println(F("]"));
     esperarCanalLibre();
     return;
   }
 
   if (paqActual == 0 || paqTotal == 0 || paqActual > paqTotal || paqTotal > MAX_PAQUETES) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [control invalido 0x"));
+    Serial.print(F("<<:log:error: control invalido 0x"));
     Serial.print(control, HEX);
     Serial.println(F("]"));
     esperarCanalLibre();
@@ -284,17 +260,14 @@ void loop() {
     uint16_t textoLenEsperado = obtenerLongitudDatosPaquete(mensajeLongitudEsperada, paqActual);
     uint16_t cifradoEsperadoAntici = obtenerLongitudCifradaPaquete(textoLenEsperado);
     if (cifradoEsperadoAntici != longitud) {
-      Serial.print(F("<<:Fallos recepcion de mensaje: [tamaño incorrecto paq "));
+      Serial.print(F("<<:log:error: tamaño incorrecto: paq "));
       Serial.print(paqActual);
       Serial.print(F(" - calc="));
       Serial.print(cifradoEsperadoAntici);
       Serial.print(F(" recv="));
       Serial.print(longitud);
-      Serial.println(F("]"));
       // * Saltar bytes restantes para mantener sincronización
-      for (int i = 0; i < longitud; i++) recibirByteSync();
-      recibirByteSync();  // checksum
-      recibirByteSync();  // fin
+      descartarRestoTrama(longitud);
       esperarCanalLibre();
       return;
     }
@@ -310,7 +283,7 @@ void loop() {
   byte fin = recibirByteSync();
 
   if (checkCalc != checkRecibido) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [checksum calc=0x"));
+    Serial.print(F("<<:log:error: [checksum calc=0x"));
     Serial.print(checkCalc, HEX);
     Serial.print(F(" recibido=0x"));
     Serial.print(checkRecibido, HEX);
@@ -320,7 +293,7 @@ void loop() {
   }
 
   if (fin != FIN_TRAMA) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [fin invalido 0x"));
+    Serial.print(F("<<:log:error: fin invalido 0x"));
     Serial.print(fin, HEX);
     Serial.println(F("]"));
     esperarCanalLibre();
@@ -330,7 +303,7 @@ void loop() {
   memcpy(datosCifradosGlobal, datosGlobal, longitud);
   descifrarAES(datosGlobal, longitud);
 
-  Serial.print(F("<<:[paq "));
+  Serial.print(F("<<:log:[paq "));
   Serial.print(paqActual);
   Serial.print(F("/"));
   Serial.print(paqTotal);
@@ -339,41 +312,36 @@ void loop() {
   Serial.println();
 
   if (paqActual == 1) {
-    uint16_t longitudMensaje = (uint16_t)((datosGlobal[0] << 8) | datosGlobal[1]);
-    uint8_t totalEsperado = calcularNumeroPaquetes(longitudMensaje);
-
-    if (longitudMensaje == 0 || longitudMensaje > MAX_MENSAJE_TOTAL) {
-      Serial.println(F("<<:Fallos recepcion de mensaje: [longitud de mensaje invalida]"));
+    // * Primer paquete: inicializar estado de reensamblado
+    if (paqTotal > MAX_PAQUETES) {
+      Serial.println(F("<<:log:error: total de paquetes excede maximo"));
       esperarCanalLibre();
       return;
     }
-    if (paqTotal != totalEsperado) {
-      Serial.println(F("<<:Fallos recepcion de mensaje: [total de paquetes no coincide]"));
-      esperarCanalLibre();
-      return;
-    }
-
     resetearBuffer();
     totalPaquetes = paqTotal;
-    mensajeLongitudEsperada = longitudMensaje;
-  } else if (totalPaquetes != paqTotal || mensajeLongitudEsperada == 0) {
-    Serial.println(F("<<:Fallos recepcion de mensaje: [inconsistencia en total de paquetes]"));
-    return;
-  }
-
-  uint16_t textoLen = obtenerLongitudDatosPaquete(mensajeLongitudEsperada, paqActual);
-  uint16_t cifradoEsperado = obtenerLongitudCifradaPaquete((paqActual == 1) ? (uint16_t)(2 + textoLen) : textoLen);
-  if (cifradoEsperado != longitud) {
-    Serial.println(F("<<:Fallos recepcion de mensaje: [longitud cifrada inesperada]"));
+    mensajeLongitudEsperada = 0;  // * Se calculará cuando todos los paquetes lleguen
+  } else if (totalPaquetes != paqTotal || totalPaquetes == 0) {
+    Serial.println(F("<<:log:error: inconsistencia en total de paquetes"));
     esperarCanalLibre();
     return;
   }
 
-  uint16_t offsetTexto = (paqActual == 1) ? 0 : (MAX_DATOS_PRIMER_PAQUETE + (uint16_t)(paqActual - 2) * MAX_PAYLOAD);
-  uint8_t* fuente = (paqActual == 1) ? (datosGlobal + 2) : datosGlobal;
+  // * Calcular longitud real del plaintext (remover PKCS7 padding en último paquete)
+  uint8_t textoLen = longitud;
+  if (paqActual == totalPaquetes && longitud > 0) {
+    // * Último paquete: remover padding PKCS7
+    uint8_t padLen = datosGlobal[longitud - 1];
+    if (padLen > 0 && padLen <= AES_BLOCK_SIZE) {
+      textoLen = longitud - padLen;
+    }
+  }
+
+  uint16_t offsetTexto = (uint16_t)(paqActual - 1) * MAX_PAYLOAD;
+  uint8_t* fuente = datosGlobal;  // * Todos los paquetes tienen datos desde offset 0
   memcpy(mensajeBuffer + offsetTexto, fuente, textoLen);
 
-  Serial.print(F("<<:[paq "));
+  Serial.print(F("<<:log: [paq "));
   Serial.print(paqActual);
   Serial.print(F("/"));
   Serial.print(paqTotal);
@@ -382,7 +350,7 @@ void loop() {
   Serial.println();
 
   if ((paquetesRecibidos & (1 << (paqActual - 1))) != 0) {
-    Serial.print(F("<<:Fallos recepcion de mensaje: [paq duplicado "));
+    Serial.print(F("<<:log:error: [paq duplicado "));
     Serial.print(paqActual);
     Serial.println(F("]"));
     esperarCanalLibre();
@@ -393,16 +361,21 @@ void loop() {
   contadorRecibidos++;
 
   if (contadorRecibidos == totalPaquetes) {
-    Serial.print(F("<<:[De "));
-    imprimirMAC(macOrigen);
+    // * Calcular longitud total real (último paquete puede ser parcial)
+    mensajeLongitudEsperada = (uint16_t)((totalPaquetes - 1) * MAX_PAYLOAD + textoLen);
     
-    imprimirMensaje(mensajeBuffer, mensajeLongitudEsperada, totalPaquetes);
+    Serial.print(F("<<:log:[De "));
+    imprimirMAC(macOrigen);
+    Serial.println();
+
+    // * Imprimir mensaje completo en el formato solicitado (única salida final)
+    imprimirMensajeCompleto(macOrigen, mensajeBuffer, mensajeLongitudEsperada);
     resetearBuffer();
   } else {
-    Serial.print(F("<<:[paq "));
+    Serial.print(F("<<:log:[paq "));
     Serial.print(paqActual);
     Serial.print(F("/"));
     Serial.print(paqTotal);
-    Serial.println(F(" esperando resto..."));
+    Serial.println();
   }
 }
