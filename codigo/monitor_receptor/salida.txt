@@ -1,0 +1,21 @@
+Pulso us=52080 | unidades=0.52 | simbolo=1 (BIT0)
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+Pulso us=8 | unidades=0.00 | simbolo=0 (DESCONOCIDO)
+Pulso us=90341 | unidades=0.90 | simbolo=1 (BIT0)
+Pulso us=105 | unidades=0.00 | simbolo=0 (DESCONOCIDO)
+[INFO] Sin pulso. Total: 117 | Invalidos: 22
+[INFO] Sin pulso. Total: 117 | Invalidos: 22
+
+Pulso us=52080 | unidades=0.52 | simbolo=1 (BIT0)
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+[INFO] Sin pulso. Total: 114 | Invalidos: 20
+Pulso us=8 | unidades=0.00 | simbolo=0 (DESCONOCIDO)
+Pulso us=90341 | unidades=0.90 | simbolo=1 (BIT0)
+Pulso us=105 | unidades=0.00 | simbolo=0 (DESCONOCIDO)
+[INFO] Sin pulso. Total: 117 | Invalidos: 22
+[INFO] Sin pulso. Total: 117 | Invalidos: 22
